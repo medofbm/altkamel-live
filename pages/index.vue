@@ -498,11 +498,11 @@ onUnmounted(() => {
             />
 
             <!-- ════ البصمة المائية — برعاية التكامل نت ════ -->
-            <div class="absolute bottom-16 right-4 sm:right-6 z-20 pointer-events-none select-none opacity-90 transition-opacity duration-300 hover:opacity-100">
+            <div class="absolute bottom-8 right-4 sm:right-6 z-20 pointer-events-none select-none opacity-90 transition-opacity duration-300 hover:opacity-100">
               <img
                 src="/images/logo/logoLive.png"
                 alt="برعاية التكامل نت"
-                class="h-20 sm:h-24 md:h-32 w-auto"
+                class="h-24 sm:h-28 md:h-32 w-auto"
                 style="filter: drop-shadow(0 4px 12px rgba(0,0,0,0.8));"
               />
             </div>
@@ -599,26 +599,26 @@ onUnmounted(() => {
                 @click.stop
               >
                 <!-- معلومات البث والقناة -->
-                <div class="flex items-center gap-3 mb-2.5 relative">
+                <div class="flex items-center justify-end gap-3 mb-2.5 relative w-full">
                   
-                  <!-- القناة المفتوحة (على اليسار) -->
-                  <span class="text-white font-bold text-xs flex items-center gap-1.5" dir="ltr">
-                    {{ activeChannel.id === 'ch1' ? 'Altkamel CH1' : (activeChannel.id === 'ch2' ? 'Altkamel CH2' : activeChannel.short) }} {{ activeChannel.emoji }} 
+                  <!-- مؤشر Buffering -->
+                  <span v-if="isBuffering" class="flex items-center gap-1 text-amber-300 text-[9px] font-bold">
+                    <span class="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin inline-block" />
+                    جارٍ التحميل
                   </span>
 
                   <!-- شارة LIVE -->
                   <div
-                    class="text-[9px] font-black px-2 py-1 rounded-full flex items-center gap-1.5 text-white"
-                    style="background: rgba(220,38,38,0.88);"
+                    class="text-[9px] font-black px-2 py-1 rounded-full flex items-center gap-1.5 text-white shadow-sm"
+                    style="background: rgba(220,38,38,0.95);"
                   >
                     <span class="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
                     LIVE
                   </div>
 
-                  <!-- مؤشر Buffering -->
-                  <span v-if="isBuffering" class="flex items-center gap-1 text-amber-300 text-[9px] font-bold mr-auto">
-                    <span class="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin inline-block" />
-                    جارٍ التحميل
+                  <!-- القناة المفتوحة (على اليسار) -->
+                  <span class="text-white font-bold text-xs flex items-center gap-1.5" dir="ltr">
+                    {{ activeChannel.id === 'ch1' ? 'Altkamel CH1' : (activeChannel.id === 'ch2' ? 'Altkamel CH2' : activeChannel.short) }} {{ activeChannel.emoji }} 
                   </span>
                 </div>
 
