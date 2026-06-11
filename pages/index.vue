@@ -113,17 +113,12 @@ const MAX_RETRIES  = 3
 // بدءاً من 1100، يتذبذب كل 15 ثانية
 // ─────────────────────────────────────────────────────
 const viewerCount   = ref(1100)
-const prevCount     = ref(1100)
-const countTrend    = ref(0) // +1 صعود / -1 نزول / 0 ثابت
 let statsInterval   = null
 
 function tickViewers() {
-  prevCount.value = viewerCount.value
   // تذبذب عشوائي بين -25 و +25
   const delta = Math.floor(Math.random() * 51) - 25
-  const next  = Math.max(900, Math.min(1500, viewerCount.value + delta))
-  countTrend.value   = next > viewerCount.value ? 1 : next < viewerCount.value ? -1 : 0
-  viewerCount.value  = next
+  viewerCount.value = Math.max(800, Math.min(1500, viewerCount.value + delta))
 }
 
 // ─────────────────────────────────────────────────────
@@ -440,16 +435,13 @@ onUnmounted(() => {
           class="flex items-center gap-3 rounded-full px-4 py-2 text-xs self-start sm:self-auto"
           style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);"
         >
-          <!-- عداد المشاهدين بمؤشر الاتجاه -->
+          <!-- عداد المشاهدين -->
           <span class="flex items-center gap-1.5">
             <span class="text-sm">👁</span>
-            <span
-              class="font-bold tabular-nums transition-colors duration-500"
-              :class="countTrend > 0 ? 'text-green-400' : countTrend < 0 ? 'text-red-400' : 'text-white/60'"
-            >{{ viewerCount.toLocaleString('ar') }}</span>
+            <span class="font-bold tabular-nums text-red-400">
+              {{ viewerCount.toLocaleString('ar') }}
+            </span>
             <span class="text-white/40">مشاهد</span>
-            <span v-if="countTrend > 0" class="text-green-400 text-[10px]">▲</span>
-            <span v-else-if="countTrend < 0" class="text-red-400 text-[10px]">▼</span>
           </span>
           <span class="w-px h-3 bg-white/15" />
           <span class="text-cyan-400 font-bold">HD</span>
@@ -787,10 +779,9 @@ onUnmounted(() => {
               </div>
               <!-- مشاهدون -->
               <div class="flex flex-col items-center justify-center py-4 gap-0.5">
-                <span
-                  class="text-xl font-black tabular-nums transition-colors duration-500"
-                  :class="countTrend > 0 ? 'text-green-400' : countTrend < 0 ? 'text-red-400' : 'text-white'"
-                >{{ viewerCount.toLocaleString('ar') }}</span>
+                <span class="text-xl font-black tabular-nums text-red-400">
+                  {{ viewerCount.toLocaleString('ar') }}
+                </span>
                 <span class="text-white/30 text-[10px] font-medium">مشاهد الآن</span>
               </div>
               <!-- نوع -->
