@@ -97,6 +97,10 @@ const showControls     = ref(true)
 const showVolumeSlider = ref(false)
 const currentQuality   = ref('AUTO')
 const isBuffering      = ref(false)
+const networkSpeed     = ref(0)
+const qualityLevels    = ref([])
+const showQualityMenu  = ref(false)
+const selectedLevel    = ref(-1)
 
 let hlsInstance  = null
 let controlsTimer = null
@@ -195,19 +199,30 @@ function launchStream(url) {
       isLoading.value = false // ← هذا هو الإصلاح الجوهري
       const lvls = data?.levels ?? []
       if (lvls.length) {
+        qualityLevels.value = lvls.map((l, i) => ({
+          id: i,
+          height: l.height,
+          bitrate: l.bitrate,
+          label: l.height >= 1080 ? '1080p' : l.height >= 720 ? '720p' : l.height >= 480 ? '480p' : `${l.height}p`
+        })).reverse() // High to low
+      }
+      if (selectedLevel.value === -1) {
         const best = lvls.reduce((a, b) => (b.height > a.height ? b : a), lvls[0])
-        const h = best.height
+        const h = best?.height ?? 0
         currentQuality.value = h >= 1080 ? '1080p' : h >= 720 ? 'HD' : h >= 480 ? '480p' : 'AUTO'
       }
       videoEl.play().catch(() => { /* المتصفح يمنع التشغيل التلقائي — يظهر زر Play */ })
     })
 
-    // تتبع تبديل الجودة
+    // تتبع تبديل الجودة وسرعة الشبكة
     hlsInstance.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
       const lvl = hlsInstance?.levels?.[data.level]
       if (!lvl) return
-      const h = lvl.height ?? 0
-      currentQuality.value = h >= 1080 ? '1080p' : h >= 720 ? 'HD' : h >= 480 ? '480p' : h >= 360 ? '360p' : 'AUTO'
+      networkSpeed.value = Math.round((lvl.bitrate || 0) / 1000)
+      if (selectedLevel.value === -1) {
+        const h = lvl.height ?? 0
+        currentQuality.value = h >= 1080 ? '1080p' : h >= 720 ? 'HD' : h >= 480 ? '480p' : h >= 360 ? '360p' : 'AUTO'
+      }
     })
 
     // أخطاء حرجة فقط — hls.js يعالج الباقي تلقائياً
@@ -248,6 +263,7 @@ function switchChannel(ch) {
 }
 
 function togglePlay() {
+  showQualityMenu.value = false
   const v = videoRef.value
   if (!v || isLoading.value) return
   if (v.paused) {
@@ -288,6 +304,20 @@ function retryStream() {
   isError.value = false
   destroyHls()
   launchStream(activeChannel.value.url)
+}
+
+function setQuality(levelId) {
+  if (hlsInstance) {
+    hlsInstance.currentLevel = levelId
+    selectedLevel.value = levelId
+    if (levelId === -1) {
+      currentQuality.value = 'AUTO'
+    } else {
+      const lvl = qualityLevels.value.find(l => l.id === levelId)
+      if (lvl) currentQuality.value = lvl.label
+    }
+  }
+  showQualityMenu.value = false
 }
 
 function resetControlsTimer() {
@@ -468,12 +498,12 @@ onUnmounted(() => {
             />
 
             <!-- ════ البصمة المائية — برعاية التكامل نت ════ -->
-            <div class="absolute top-4 left-4 z-20 pointer-events-none select-none opacity-80 transition-opacity duration-300 hover:opacity-100">
+            <div class="absolute bottom-20 left-6 sm:left-8 z-20 pointer-events-none select-none opacity-90 transition-opacity duration-300 hover:opacity-100">
               <img
                 src="/images/logo/logoLive.png"
                 alt="برعاية التكامل نت"
-                class="h-14 sm:h-16 md:h-20 w-auto"
-                style="filter: drop-shadow(0 2px 8px rgba(0,0,0,0.8));"
+                class="h-20 sm:h-24 md:h-32 w-auto"
+                style="filter: drop-shadow(0 4px 12px rgba(0,0,0,0.8));"
               />
             </div>
 
@@ -568,25 +598,64 @@ onUnmounted(() => {
                 style="background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.28) 65%, transparent 100%);"
                 @click.stop
               >
-                <!-- اسم القناة + LIVE badge -->
-                <div class="flex items-center gap-2 mb-2.5">
-                  <span class="text-white font-bold text-xs">
+                <!-- معلومات البث والجودة -->
+                <div class="flex items-center gap-2 mb-2.5 relative">
+                  
+                  <!-- زر اختيار الجودة -->
+                  <div class="relative">
+                    <button
+                      @click.stop="showQualityMenu = !showQualityMenu"
+                      class="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full text-cyan-300 hover:bg-cyan-900/30 transition-colors cursor-pointer"
+                      style="background: rgba(6,182,212,0.15); border: 1px solid rgba(6,182,212,0.25);"
+                      title="تغيير الجودة"
+                    >
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                      {{ currentQuality }}
+                    </button>
+
+                    <!-- قائمة الجودات المتاحة -->
+                    <Transition name="fade-icon">
+                      <div
+                        v-if="showQualityMenu"
+                        class="absolute bottom-full right-0 mb-2 w-32 rounded-xl overflow-hidden shadow-2xl z-50 py-1"
+                        style="background: rgba(15,23,42,0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);"
+                      >
+                        <button
+                          @click.stop="setQuality(-1)"
+                          class="w-full text-right px-4 py-2 text-xs font-bold transition-colors"
+                          :class="selectedLevel === -1 ? 'text-cyan-400 bg-cyan-900/40' : 'text-white hover:bg-white/5'"
+                        >تلقائي (AUTO)</button>
+                        <button
+                          v-for="lvl in qualityLevels" :key="lvl.id"
+                          @click.stop="setQuality(lvl.id)"
+                          class="w-full text-right px-4 py-2 text-xs font-bold transition-colors"
+                          :class="selectedLevel === lvl.id ? 'text-cyan-400 bg-cyan-900/40' : 'text-white hover:bg-white/5'"
+                        >{{ lvl.label }}</button>
+                      </div>
+                    </Transition>
+                  </div>
+
+                  <!-- شارة LIVE مع سرعة البث -->
+                  <div
+                    class="text-[9px] font-black px-2 py-1 rounded-full flex items-center gap-1.5 text-white cursor-help"
+                    style="background: rgba(220,38,38,0.88);"
+                    :title="'معدل البث المباشر: ' + networkSpeed + ' kbps'"
+                  >
+                    <span class="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                    LIVE
+                    <span v-if="networkSpeed > 0" class="border-r border-white/30 pr-1.5 ml-0.5" dir="ltr">
+                      {{ (networkSpeed / 1000).toFixed(1) }} Mbps
+                    </span>
+                  </div>
+
+                  <!-- القناة المفتوحة -->
+                  <span class="text-white font-bold text-xs flex items-center gap-1.5">
                     {{ activeChannel.emoji }} {{ activeChannel.label }}
                   </span>
-                  <span
-                    class="text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 text-white"
-                    style="background: rgba(220,38,38,0.88);"
-                  >
-                    <span class="w-1 h-1 bg-white rounded-full animate-pulse" />LIVE
-                  </span>
-                  <!-- جودة البث -->
-                  <span
-                    class="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-cyan-300"
-                    style="background: rgba(6,182,212,0.15); border: 1px solid rgba(6,182,212,0.25);"
-                  >{{ currentQuality }}</span>
+
                   <!-- مؤشر Buffering -->
-                  <span v-if="isBuffering" class="flex items-center gap-1 text-amber-300 text-[9px] font-bold">
-                    <span class="w-2 h-2 border border-amber-400 border-t-transparent rounded-full animate-spin inline-block" />
+                  <span v-if="isBuffering" class="flex items-center gap-1 text-amber-300 text-[9px] font-bold mr-auto">
+                    <span class="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin inline-block" />
                     جارٍ التحميل
                   </span>
                 </div>
