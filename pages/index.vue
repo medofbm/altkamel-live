@@ -31,7 +31,7 @@ const channels = [
     id:       'ch1',
     label:    'القناة الأولى',
     short:    'CH 1',
-    url:      'http://172.16.6.102/altkamel-playlist/bein1.m3u8',
+    url:      'https://172.16.6.102/altkamel-playlist/bein1.m3u8',
     emoji:    '⚽',
     disabled: false,
     badge:    null,
