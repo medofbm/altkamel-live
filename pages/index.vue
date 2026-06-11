@@ -1,7 +1,7 @@
 <script setup>
 // ✅ صفحة البث المباشر — Premium UI — شبكة التكامل نت
 // ════════════════════════════════════════════════════
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 
 // ─────────────────────────────────────────────────────
 // ── ① بيانات الشركة — عدّل هنا فقط عند الحاجة ──
@@ -85,24 +85,24 @@ const packages = [
 // ─────────────────────────────────────────────────────
 // ── ⑤ حالة المشغّل ──
 // ─────────────────────────────────────────────────────
-const videoRef          = ref(null)
-const fallbackVideoRef  = ref(null)   // ← المشغّل الاحتياطي
-const playerContainer   = ref(null)
-const isLoading         = ref(true)
-const isError           = ref(false)
-const isPlaying         = ref(false)
-const isMuted           = ref(false)
-const isFullscreen      = ref(false)
-const volume            = ref(1)
-const showControls      = ref(true)
-const showVolumeSlider  = ref(false)
-const usingFallback     = ref(false)  // ← هل نستخدم المشغّل الاحتياطي؟
+const videoRef         = ref(null)
+const playerContainer  = ref(null)
+const isLoading        = ref(true)
+const isError          = ref(false)
+const isPlaying        = ref(false)
+const isMuted          = ref(false)
+const isFullscreen     = ref(false)
+const volume           = ref(1)
+const showControls     = ref(true)
+const showVolumeSlider = ref(false)
+const currentQuality   = ref('AUTO')
+const isBuffering      = ref(false)
 
-let hlsInstance        = null
-let fallbackHls        = null
-let controlsTimer      = null
-let retryCount         = 0
-const MAX_RETRIES       = 2
+let hlsInstance  = null
+let controlsTimer = null
+let retryTimer    = null
+let retryCount    = 0
+const MAX_RETRIES  = 3
 
 // ─────────────────────────────────────────────────────
 // ── ⑥ عداد المشاهدين الذكي ──
@@ -125,133 +125,115 @@ function tickViewers() {
 // ─────────────────────────────────────────────────────
 // ── ⑦ منطق HLS الأساسي ──
 // ─────────────────────────────────────────────────────
-function destroyHls(instance) {
-  try { instance?.destroy() } catch (_) {}
-  return null
-}
-
-function startHls(url, videoEl, onSuccess, onFatalError) {
-  if (!videoEl || !url) return
-  import('hls.js').then(({ default: Hls }) => {
-    let inst = destroyHls(hlsInstance)
-
-    if (Hls.isSupported()) {
-      inst = new Hls({
-        enableWorker:           true,
-        lowLatencyMode:         true,
-        backBufferLength:       90,
-        maxBufferLength:        30,
-        maxMaxBufferLength:     60,
-        maxLoadingDelay:        4,
-        startLevel:             -1,
-        abrEwmaDefaultEstimate: 2_000_000,
-        xhrSetup(xhr) { xhr.withCredentials = false },
-      })
-      inst.loadSource(url)
-      inst.attachMedia(videoEl)
-      inst.on(Hls.Events.MANIFEST_PARSED, () => {
-        retryCount = 0
-        videoEl.play().then(() => onSuccess?.()).catch(() => {})
-      })
-      inst.on(Hls.Events.ERROR, (_e, data) => {
-        if (!data.fatal) return
-        inst = destroyHls(inst)
-        onFatalError?.()
-      })
-      return inst
-    } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari / iOS — Native HLS
-      videoEl.src = url
-      videoEl.addEventListener('loadedmetadata', () => {
-        retryCount = 0
-        videoEl.play().catch(() => {})
-        onSuccess?.()
-      }, { once: true })
-      videoEl.addEventListener('error', () => onFatalError?.(), { once: true })
-    } else {
-      onFatalError?.()
-    }
-  })
+function destroyHls() {
+  try { hlsInstance?.destroy() } catch (_) {}
+  hlsInstance = null
 }
 
 // ─────────────────────────────────────────────────────
-// ── ⑧ تشغيل القناة مع Fallback ذكي ──
-// المرحلة 1: hls.js على videoRef
-// إذا فشل → المرحلة 2: <video> احتياطي (fallbackVideoRef)
-// إذا فشل → خطأ نهائي
+// ── ⑧ تشغيل البث — إصلاح مشكلة بقاء شاشة التحميل ──
+// السبب السابق: isLoading كان يُخفى فقط بعد نجاح play()
+// لكن المتصفحات كثيراً ما ترفض التشغيل التلقائي
+// الحل: أخفِ شاشة التحميل فور MANIFEST_PARSED
 // ─────────────────────────────────────────────────────
 function launchStream(url) {
   if (!url) return
-  isLoading.value   = true
-  isError.value     = false
-  usingFallback.value = false
-  retryCount        = 0
+  clearTimeout(retryTimer)
+  isLoading.value  = true
+  isError.value    = false
+  isPlaying.value  = false
+  isBuffering.value = false
 
-  // المرحلة 1: المشغّل الأساسي
-  startHls(
-    url,
-    videoRef.value,
-    () => {
-      // نجاح
-      isLoading.value  = false
-      isPlaying.value  = true
-    },
-    () => {
-      // فشل المشغّل الأساسي → نجرب الاحتياطي
-      retryCount++
-      if (retryCount <= MAX_RETRIES) {
-        setTimeout(() => launchStream(url), 1500 * retryCount)
+  import('hls.js').then(({ default: Hls }) => {
+    destroyHls()
+    const videoEl = videoRef.value
+    if (!videoEl) return
+
+    // ─── Safari / iOS: دعم HLS الأصلي ───
+    if (!Hls.isSupported()) {
+      if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+        videoEl.src = url
+        videoEl.load()
+        videoEl.addEventListener('loadedmetadata', () => {
+          retryCount = 0
+          isLoading.value = false
+          videoEl.play().catch(() => {})
+        }, { once: true })
+        videoEl.addEventListener('error', () => handleStreamError(url), { once: true })
       } else {
-        activateFallback(url)
+        isLoading.value = false
+        isError.value   = true
       }
-    }
-  )
-}
-
-function activateFallback(url) {
-  // الانتقال للمشغّل الاحتياطي
-  usingFallback.value = true
-  isLoading.value     = true
-
-  // انتظر ظهور عنصر الـ DOM الاحتياطي
-  nextTick(() => {
-    if (!fallbackVideoRef.value) {
-      isLoading.value = false
-      isError.value   = true
       return
     }
-    import('hls.js').then(({ default: Hls }) => {
-      fallbackHls = destroyHls(fallbackHls)
-      if (Hls.isSupported()) {
-        fallbackHls = new Hls({ lowLatencyMode: true, enableWorker: true })
-        fallbackHls.loadSource(url)
-        fallbackHls.attachMedia(fallbackVideoRef.value)
-        fallbackHls.on(Hls.Events.MANIFEST_PARSED, () => {
-          isLoading.value = false
-          fallbackVideoRef.value.play().then(() => { isPlaying.value = true }).catch(() => {})
-        })
-        fallbackHls.on(Hls.Events.ERROR, (_e, data) => {
-          if (data.fatal) {
-            fallbackHls = destroyHls(fallbackHls)
-            isLoading.value = false
-            isError.value   = true
-          }
-        })
-      } else if (fallbackVideoRef.value.canPlayType('application/vnd.apple.mpegurl')) {
-        fallbackVideoRef.value.src = url
-        fallbackVideoRef.value.addEventListener('loadedmetadata', () => {
-          isLoading.value = false
-          fallbackVideoRef.value.play().catch(() => {})
-          isPlaying.value = true
-        }, { once: true })
-        fallbackVideoRef.value.addEventListener('error', () => {
-          isLoading.value = false; isError.value = true
-        }, { once: true })
-      } else {
-        isLoading.value = false; isError.value = true
-      }
+
+    // ─── hls.js ───
+    hlsInstance = new Hls({
+      enableWorker:            true,
+      lowLatencyMode:          true,
+      backBufferLength:        90,
+      maxBufferLength:         30,
+      maxMaxBufferLength:      90,
+      maxLoadingDelay:         4,
+      startLevel:              -1,
+      abrEwmaDefaultEstimate:  2_000_000,
+      fragLoadingTimeOut:      20000,
+      manifestLoadingTimeOut:  15000,
+      levelLoadingTimeOut:     15000,
+      fragLoadingMaxRetry:     6,
+      manifestLoadingMaxRetry: 3,
+      levelLoadingMaxRetry:    4,
+      xhrSetup(xhr) { xhr.withCredentials = false },
     })
+
+    hlsInstance.loadSource(url)
+    hlsInstance.attachMedia(videoEl)
+
+    // ✅ الإصلاح: أخفِ التحميل هنا — قبل play() وليس بعده
+    hlsInstance.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
+      retryCount = 0
+      isLoading.value = false // ← هذا هو الإصلاح الجوهري
+      const lvls = data?.levels ?? []
+      if (lvls.length) {
+        const best = lvls.reduce((a, b) => (b.height > a.height ? b : a), lvls[0])
+        const h = best.height
+        currentQuality.value = h >= 1080 ? '1080p' : h >= 720 ? 'HD' : h >= 480 ? '480p' : 'AUTO'
+      }
+      videoEl.play().catch(() => { /* المتصفح يمنع التشغيل التلقائي — يظهر زر Play */ })
+    })
+
+    // تتبع تبديل الجودة
+    hlsInstance.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
+      const lvl = hlsInstance?.levels?.[data.level]
+      if (!lvl) return
+      const h = lvl.height ?? 0
+      currentQuality.value = h >= 1080 ? '1080p' : h >= 720 ? 'HD' : h >= 480 ? '480p' : h >= 360 ? '360p' : 'AUTO'
+    })
+
+    // أخطاء حرجة فقط — hls.js يعالج الباقي تلقائياً
+    hlsInstance.on(Hls.Events.ERROR, (_e, data) => {
+      if (!data.fatal) return
+      destroyHls()
+      handleStreamError(url)
+    })
+
+  }).catch(() => {
+    isLoading.value = false
+    isError.value   = true
   })
+}
+
+function handleStreamError(url) {
+  retryCount++
+  if (retryCount <= MAX_RETRIES) {
+    const delay = Math.min(2000 * retryCount, 8000)
+    isLoading.value = true
+    isError.value   = false
+    retryTimer = setTimeout(() => launchStream(url), delay)
+  } else {
+    isLoading.value = false
+    isError.value   = true
+  }
 }
 
 // ─────────────────────────────────────────────────────
@@ -260,35 +242,33 @@ function activateFallback(url) {
 function switchChannel(ch) {
   if (ch.disabled || !ch.url) return
   activeChannel.value = ch
-  isPlaying.value     = false
-  retryCount          = 0
-  hlsInstance         = destroyHls(hlsInstance)
-  fallbackHls         = destroyHls(fallbackHls)
-  usingFallback.value = false
+  retryCount = 0
+  destroyHls()
   launchStream(ch.url)
 }
 
-function currentVideoEl() {
-  return usingFallback.value ? fallbackVideoRef.value : videoRef.value
-}
-
 function togglePlay() {
-  const v = currentVideoEl()
-  if (!v) return
-  if (v.paused) { v.play(); isPlaying.value = true }
-  else          { v.pause(); isPlaying.value = false }
+  const v = videoRef.value
+  if (!v || isLoading.value) return
+  if (v.paused) {
+    v.play().then(() => { isPlaying.value = true }).catch(() => {})
+  } else {
+    v.pause()
+    isPlaying.value = false
+  }
 }
 
 function toggleMute() {
-  const v = currentVideoEl()
+  const v = videoRef.value
   if (!v) return
   v.muted = !v.muted
   isMuted.value = v.muted
+  if (!v.muted && volume.value === 0) { volume.value = 0.5; v.volume = 0.5 }
 }
 
 function setVolume(val) {
   volume.value = val
-  const v = currentVideoEl()
+  const v = videoRef.value
   if (v) { v.volume = val; isMuted.value = val === 0 }
 }
 
@@ -304,11 +284,9 @@ function toggleFullscreen() {
 }
 
 function retryStream() {
-  retryCount  = 0
+  retryCount    = 0
   isError.value = false
-  usingFallback.value = false
-  hlsInstance = destroyHls(hlsInstance)
-  fallbackHls = destroyHls(fallbackHls)
+  destroyHls()
   launchStream(activeChannel.value.url)
 }
 
@@ -328,14 +306,24 @@ onMounted(() => {
   document.addEventListener('fullscreenchange', () => {
     isFullscreen.value = !!document.fullscreenElement
   })
-  // عداد المشاهدين — كل 15 ثانية
   statsInterval = setInterval(tickViewers, 15_000)
+
+  // مراقبة حالة التشغيل من أحداث عنصر الفيديو مباشرةً
+  nextTick(() => {
+    const v = videoRef.value
+    if (!v) return
+    v.addEventListener('playing', () => { isPlaying.value = true; isBuffering.value = false })
+    v.addEventListener('pause',   () => { isPlaying.value = false })
+    v.addEventListener('waiting', () => { isBuffering.value = true })
+    v.addEventListener('canplay', () => { isBuffering.value = false })
+    v.addEventListener('stalled', () => { isBuffering.value = true })
+  })
 })
 
 onUnmounted(() => {
-  hlsInstance = destroyHls(hlsInstance)
-  fallbackHls = destroyHls(fallbackHls)
+  destroyHls()
   clearTimeout(controlsTimer)
+  clearTimeout(retryTimer)
   clearInterval(statsInterval)
 })
 </script>
@@ -469,21 +457,9 @@ onUnmounted(() => {
             @touchstart.passive="resetControlsTimer"
             @click="togglePlay"
           >
-            <!-- ── عنصر الفيديو الأساسي ── -->
+            <!-- ── عنصر الفيديو الوحيد ── -->
             <video
-              v-show="!usingFallback"
               ref="videoRef"
-              class="w-full h-full object-contain"
-              playsinline
-              webkit-playsinline
-              :muted="isMuted"
-              preload="auto"
-            />
-
-            <!-- ── عنصر الفيديو الاحتياطي (Fallback) ── -->
-            <video
-              v-if="usingFallback"
-              ref="fallbackVideoRef"
               class="w-full h-full object-contain"
               playsinline
               webkit-playsinline
@@ -514,9 +490,6 @@ onUnmounted(() => {
                 </div>
                 <p class="text-white font-bold text-sm mb-1">جارٍ تحميل البث...</p>
                 <p class="text-white/35 text-xs">{{ activeChannel.label }}</p>
-                <p v-if="usingFallback" class="text-amber-400/70 text-[10px] mt-2 font-medium">
-                  جارٍ تفعيل المشغّل الاحتياطي...
-                </p>
               </div>
             </Transition>
 
@@ -606,11 +579,16 @@ onUnmounted(() => {
                   >
                     <span class="w-1 h-1 bg-white rounded-full animate-pulse" />LIVE
                   </span>
+                  <!-- جودة البث -->
                   <span
-                    v-if="usingFallback"
-                    class="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-amber-300"
-                    style="background: rgba(217,119,6,0.25); border: 1px solid rgba(217,119,6,0.3);"
-                  >احتياطي</span>
+                    class="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-cyan-300"
+                    style="background: rgba(6,182,212,0.15); border: 1px solid rgba(6,182,212,0.25);"
+                  >{{ currentQuality }}</span>
+                  <!-- مؤشر Buffering -->
+                  <span v-if="isBuffering" class="flex items-center gap-1 text-amber-300 text-[9px] font-bold">
+                    <span class="w-2 h-2 border border-amber-400 border-t-transparent rounded-full animate-spin inline-block" />
+                    جارٍ التحميل
+                  </span>
                 </div>
 
                 <!-- أزرار التحكم -->
