@@ -438,7 +438,7 @@ onUnmounted(() => {
           <!-- عداد المشاهدين -->
           <span class="flex items-center gap-1.5">
             <span class="text-sm">👁</span>
-            <span class="font-bold tabular-nums text-red-400">
+            <span class="font-bold tabular-nums text-emerald-400">
               {{ viewerCount.toLocaleString('ar') }}
             </span>
             <span class="text-white/40">مشاهد</span>
@@ -779,7 +779,7 @@ onUnmounted(() => {
               </div>
               <!-- مشاهدون -->
               <div class="flex flex-col items-center justify-center py-4 gap-0.5">
-                <span class="text-xl font-black tabular-nums text-red-400">
+                <span class="text-xl font-black tabular-nums text-emerald-400">
                   {{ viewerCount.toLocaleString('ar') }}
                 </span>
                 <span class="text-white/30 text-[10px] font-medium">مشاهد الآن</span>
