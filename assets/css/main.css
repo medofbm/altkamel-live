@@ -1,0 +1,85 @@
+/* assets/css/main.css — الأنماط العامة لمنصة البث */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── الخط الافتراضي ── */
+@layer base {
+  html {
+    font-family: 'Cairo', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: #07091a;
+    color: #ffffff;
+    overflow-x: hidden;
+  }
+
+  /* تحسين مظهر شريط التمرير */
+  ::-webkit-scrollbar {
+    width: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(99, 102, 241, 0.3);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(99, 102, 241, 0.5);
+  }
+}
+
+@layer components {
+  /* زر أساسي */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white transition-all duration-200;
+    background: linear-gradient(135deg, #3820d0 0%, #0094b0 100%);
+    box-shadow: 0 4px 20px rgba(67, 56, 202, 0.35);
+  }
+  .btn-primary:hover {
+    box-shadow: 0 8px 30px rgba(67, 56, 202, 0.5);
+    transform: translateY(-1px);
+  }
+
+  /* بطاقة زجاجية */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    backdrop-filter: blur(20px);
+    border-radius: 1rem;
+  }
+}
+
+/* ── تأثيرات مخصصة ── */
+@keyframes liveGlow {
+  0%, 100% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.5); }
+  50%       { box-shadow: 0 0 20px rgba(239, 68, 68, 0.8); }
+}
+
+.live-glow {
+  animation: liveGlow 2s ease-in-out infinite;
+}
+
+/* slider مخصص */
+input[type="range"].accent-cyan-400 {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.15);
+  outline: none;
+}
+input[type="range"].accent-cyan-400::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #00e1f0;
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(0, 225, 240, 0.5);
+}
