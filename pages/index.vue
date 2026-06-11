@@ -498,7 +498,7 @@ onUnmounted(() => {
             />
 
             <!-- ════ البصمة المائية — برعاية التكامل نت ════ -->
-            <div class="absolute bottom-20 left-6 sm:left-8 z-20 pointer-events-none select-none opacity-90 transition-opacity duration-300 hover:opacity-100">
+            <div class="absolute bottom-16 right-4 sm:right-6 z-20 pointer-events-none select-none opacity-90 transition-opacity duration-300 hover:opacity-100">
               <img
                 src="/images/logo/logoLive.png"
                 alt="برعاية التكامل نت"
@@ -598,60 +598,22 @@ onUnmounted(() => {
                 style="background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.28) 65%, transparent 100%);"
                 @click.stop
               >
-                <!-- معلومات البث والجودة -->
-                <div class="flex items-center gap-2 mb-2.5 relative">
+                <!-- معلومات البث والقناة -->
+                <div class="flex items-center gap-3 mb-2.5 relative">
                   
-                  <!-- زر اختيار الجودة -->
-                  <div class="relative">
-                    <button
-                      @click.stop="showQualityMenu = !showQualityMenu"
-                      class="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full text-cyan-300 hover:bg-cyan-900/30 transition-colors cursor-pointer"
-                      style="background: rgba(6,182,212,0.15); border: 1px solid rgba(6,182,212,0.25);"
-                      title="تغيير الجودة"
-                    >
-                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                      {{ currentQuality }}
-                    </button>
+                  <!-- القناة المفتوحة (على اليسار) -->
+                  <span class="text-white font-bold text-xs flex items-center gap-1.5" dir="ltr">
+                    {{ activeChannel.id === 'ch1' ? 'Altkamel CH1' : (activeChannel.id === 'ch2' ? 'Altkamel CH2' : activeChannel.short) }} {{ activeChannel.emoji }} 
+                  </span>
 
-                    <!-- قائمة الجودات المتاحة -->
-                    <Transition name="fade-icon">
-                      <div
-                        v-if="showQualityMenu"
-                        class="absolute bottom-full right-0 mb-2 w-32 rounded-xl overflow-hidden shadow-2xl z-50 py-1"
-                        style="background: rgba(15,23,42,0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);"
-                      >
-                        <button
-                          @click.stop="setQuality(-1)"
-                          class="w-full text-right px-4 py-2 text-xs font-bold transition-colors"
-                          :class="selectedLevel === -1 ? 'text-cyan-400 bg-cyan-900/40' : 'text-white hover:bg-white/5'"
-                        >تلقائي (AUTO)</button>
-                        <button
-                          v-for="lvl in qualityLevels" :key="lvl.id"
-                          @click.stop="setQuality(lvl.id)"
-                          class="w-full text-right px-4 py-2 text-xs font-bold transition-colors"
-                          :class="selectedLevel === lvl.id ? 'text-cyan-400 bg-cyan-900/40' : 'text-white hover:bg-white/5'"
-                        >{{ lvl.label }}</button>
-                      </div>
-                    </Transition>
-                  </div>
-
-                  <!-- شارة LIVE مع سرعة البث -->
+                  <!-- شارة LIVE -->
                   <div
-                    class="text-[9px] font-black px-2 py-1 rounded-full flex items-center gap-1.5 text-white cursor-help"
+                    class="text-[9px] font-black px-2 py-1 rounded-full flex items-center gap-1.5 text-white"
                     style="background: rgba(220,38,38,0.88);"
-                    :title="'معدل البث المباشر: ' + networkSpeed + ' kbps'"
                   >
                     <span class="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
                     LIVE
-                    <span v-if="networkSpeed > 0" class="border-r border-white/30 pr-1.5 ml-0.5" dir="ltr">
-                      {{ (networkSpeed / 1000).toFixed(1) }} Mbps
-                    </span>
                   </div>
-
-                  <!-- القناة المفتوحة -->
-                  <span class="text-white font-bold text-xs flex items-center gap-1.5">
-                    {{ activeChannel.emoji }} {{ activeChannel.label }}
-                  </span>
 
                   <!-- مؤشر Buffering -->
                   <span v-if="isBuffering" class="flex items-center gap-1 text-amber-300 text-[9px] font-bold mr-auto">
