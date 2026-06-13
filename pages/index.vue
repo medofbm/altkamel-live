@@ -120,27 +120,25 @@ function tickViewers() {
   const delta = Math.floor(Math.random() * 51) - 25
   viewerCount.value = Math.max(800, Math.min(1500, viewerCount.value + delta))
 }
-
 // ─────────────────────────────────────────────────────
-// ── ⑦ منطق HLS الأساسي ──
+// ── ⑦ منطق HLS الأساسي ومحرك التعافي التلقائي ──
 // ─────────────────────────────────────────────────────
 function destroyHls() {
-  try { hlsInstance?.destroy() } catch (_) {}
-  hlsInstance = null
+  if (hlsInstance) {
+    hlsInstance.destroy()
+    hlsInstance = null
+  }
 }
 
 // ─────────────────────────────────────────────────────
-// ── ⑧ تشغيل البث — إصلاح مشكلة بقاء شاشة التحميل ──
-// السبب السابق: isLoading كان يُخفى فقط بعد نجاح play()
-// لكن المتصفحات كثيراً ما ترفض التشغيل التلقائي
-// الحل: أخفِ شاشة التحميل فور MANIFEST_PARSED
+// ── ⑧ تشغيل البث — المحسن لشبكات اللاسلكي (WISP) ──
 // ─────────────────────────────────────────────────────
 function launchStream(url) {
   if (!url) return
   clearTimeout(retryTimer)
-  isLoading.value  = true
-  isError.value    = false
-  isPlaying.value  = false
+  isLoading.value   = true
+  isError.value     = false
+  isPlaying.value   = false
   isBuffering.value = false
 
   import('hls.js').then(({ default: Hls }) => {
@@ -166,32 +164,38 @@ function launchStream(url) {
       return
     }
 
-    // ─── hls.js ───
+    // ─── hls.js (النسخة المحسنة) ───
     hlsInstance = new Hls({
-      enableWorker:            true,
-      lowLatencyMode:          true,
-      backBufferLength:        90,
-      maxBufferLength:         30,
-      maxMaxBufferLength:      90,
-      maxLoadingDelay:         4,
-      startLevel:              -1,
-      abrEwmaDefaultEstimate:  2_000_000,
-      fragLoadingTimeOut:      20000,
-      manifestLoadingTimeOut:  15000,
-      levelLoadingTimeOut:     15000,
-      fragLoadingMaxRetry:     6,
-      manifestLoadingMaxRetry: 3,
-      levelLoadingMaxRetry:    4,
+      enableWorker: true,
+      
+      // تعطيل وضع زمن الوصول المنخفض لزيادة استقرار البث عبر اللاسلكي
+      lowLatencyMode: false, 
+      
+      // إعدادات الذاكرة المؤقتة (البفرينغ) لامتصاص تذبذب الشبكة
+      backBufferLength: 30,       // تنظيف الذاكرة القديمة بسرعة لتخفيف الضغط على الرام
+      maxBufferLength: 60,        // تخزين حتى 60 ثانية للأمام إذا كانت الشبكة سريعة
+      maxMaxBufferLength: 90,
+      
+      // الابتعاد عن حافة البث المباشر لتجنب التقطيع عند تأخر وصول الحزم
+      liveSyncDurationCount: 3,   // البقاء متأخراً 3 أجزاء (Fragments) عن البث الفعلي
+      liveMaxLatencyDurationCount: 10,
+      
+      // تحمل أخطاء توقيت الصوت والصورة (AAC Timestamps)
+      strict: false,              // عدم إيقاف البث عند وجود أخطاء في الـ Playlist
+      manifestLoadingMaxRetry: 5,
+      fragLoadingMaxRetry: 6,
+      levelLoadingMaxRetry: 4,
+      fragLoadingTimeOut: 20000,
+      
       xhrSetup(xhr) { xhr.withCredentials = false },
     })
 
     hlsInstance.loadSource(url)
     hlsInstance.attachMedia(videoEl)
 
-    // ✅ الإصلاح: أخفِ التحميل هنا — قبل play() وليس بعده
     hlsInstance.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
       retryCount = 0
-      isLoading.value = false // ← هذا هو الإصلاح الجوهري
+      isLoading.value = false 
       const lvls = data?.levels ?? []
       if (lvls.length) {
         qualityLevels.value = lvls.map((l, i) => ({
@@ -199,17 +203,16 @@ function launchStream(url) {
           height: l.height,
           bitrate: l.bitrate,
           label: l.height >= 1080 ? '1080p' : l.height >= 720 ? '720p' : l.height >= 480 ? '480p' : `${l.height}p`
-        })).reverse() // High to low
+        })).reverse()
       }
       if (selectedLevel.value === -1) {
         const best = lvls.reduce((a, b) => (b.height > a.height ? b : a), lvls[0])
         const h = best?.height ?? 0
         currentQuality.value = h >= 1080 ? '1080p' : h >= 720 ? 'HD' : h >= 480 ? '480p' : 'AUTO'
       }
-      videoEl.play().catch(() => { /* المتصفح يمنع التشغيل التلقائي — يظهر زر Play */ })
+      videoEl.play().catch(() => { /* المتصفح يمنع التشغيل التلقائي */ })
     })
 
-    // تتبع تبديل الجودة وسرعة الشبكة
     hlsInstance.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
       const lvl = hlsInstance?.levels?.[data.level]
       if (!lvl) return
@@ -220,30 +223,33 @@ function launchStream(url) {
       }
     })
 
-    // أخطاء حرجة فقط — hls.js يعالج الباقي تلقائياً
+    // ─── محرك التعافي التلقائي للأخطاء ───
     hlsInstance.on(Hls.Events.ERROR, (_e, data) => {
-      if (!data.fatal) return
-      destroyHls()
-      handleStreamError(url)
+      if (data.fatal) {
+        switch (data.type) {
+          case Hls.ErrorTypes.NETWORK_ERROR:
+            // إذا انقطعت الشبكة لثانية، يحاول تحميل الجزء مرة أخرى بصمت
+            console.warn("Network error encountered, trying to recover...");
+            hlsInstance.startLoad();
+            break;
+          case Hls.ErrorTypes.MEDIA_ERROR:
+            // يعالج أخطاء توقيت الصوت (AAC) دون أن يلاحظ المشاهد
+            console.warn("Media error encountered, attempting to heal...");
+            hlsInstance.recoverMediaError();
+            break;
+          default:
+            // أخطاء حرجة جداً، إعادة تشغيل المحرك بالكامل
+            destroyHls();
+            handleStreamError(url);
+            break;
+        }
+      }
     })
 
   }).catch(() => {
     isLoading.value = false
     isError.value   = true
   })
-}
-
-function handleStreamError(url) {
-  retryCount++
-  if (retryCount <= MAX_RETRIES) {
-    const delay = Math.min(2000 * retryCount, 8000)
-    isLoading.value = true
-    isError.value   = false
-    retryTimer = setTimeout(() => launchStream(url), delay)
-  } else {
-    isLoading.value = false
-    isError.value   = true
-  }
 }
 
 // ─────────────────────────────────────────────────────
