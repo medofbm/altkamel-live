@@ -6,8 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="7d95c6cf-8512-46a4-8fad-2201a1a3af0f" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pages/index.vue" beforeDir="false" afterPath="$PROJECT_DIR$/pages/index.vue" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -77,6 +75,7 @@
       <workItem from="1781209948833" duration="49000" />
       <workItem from="1781296980933" duration="1507000" />
       <workItem from="1781724885969" duration="414000" />
+      <workItem from="1781725519394" duration="2713000" />
     </task>
     <servers />
   </component>

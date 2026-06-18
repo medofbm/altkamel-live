@@ -102,8 +102,8 @@ const qualityLevels    = ref([])
 const showQualityMenu  = ref(false)
 const selectedLevel    = ref(-1)
 
-// ── iOS detection for fullscreen workaround ──
-const isIOS = ref(false)
+// ── Fullscreen API workaround detection (iOS + Smart TVs) ──
+const isLimitedFullscreen = ref(false)
 
 let hlsInstance  = null
 let controlsTimer = null
@@ -297,24 +297,24 @@ function toggleFullscreen() {
   const videoEl = videoRef.value
   if (!el) return
 
-  // ── iOS Safari: no Fullscreen API on containers ──
-  // Use webkitEnterFullscreen on the <video> element if available,
-  // otherwise fall back to a CSS-based pseudo-fullscreen.
-  if (isIOS.value) {
+  // ── Limited Fullscreen API (iOS Safari, Smart TVs) ──
+  // These platforms don't support requestFullscreen() on containers.
+  // Strategy: try webkitEnterFullscreen on <video>, else CSS pseudo-fullscreen.
+  if (isLimitedFullscreen.value) {
     if (videoEl && typeof videoEl.webkitEnterFullscreen === 'function' && !isFullscreen.value) {
-      // iOS supports fullscreen on <video> elements natively
       videoEl.webkitEnterFullscreen()
     } else if (videoEl && typeof videoEl.webkitExitFullscreen === 'function' && isFullscreen.value) {
       videoEl.webkitExitFullscreen()
     } else {
-      // CSS pseudo-fullscreen fallback for iOS
+      // CSS pseudo-fullscreen fallback
       if (!isFullscreen.value) {
-        el.classList.add('ios-pseudo-fullscreen')
+        el.classList.add('pseudo-fullscreen')
+        document.documentElement.classList.add('pseudo-fullscreen-active')
         isFullscreen.value = true
-        // Attempt orientation lock (may be blocked on iOS)
         screen?.orientation?.lock?.('landscape').catch(() => {})
       } else {
-        el.classList.remove('ios-pseudo-fullscreen')
+        el.classList.remove('pseudo-fullscreen')
+        document.documentElement.classList.remove('pseudo-fullscreen-active')
         isFullscreen.value = false
         screen?.orientation?.unlock?.()
       }
@@ -323,12 +323,23 @@ function toggleFullscreen() {
   }
 
   // ── Standard Fullscreen API (Chrome, Firefox, Desktop Safari) ──
+  // Try the standard API first, fall back to CSS pseudo-fullscreen if it fails.
   const fsElement = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement
   if (!fsElement) {
     const requestFs = el.requestFullscreen || el.webkitRequestFullscreen || el.webkitRequestFullScreen || el.mozRequestFullScreen
     if (requestFs) {
-      requestFs.call(el)
+      requestFs.call(el).catch(() => {
+        // Fullscreen API rejected — fall back to pseudo-fullscreen
+        el.classList.add('pseudo-fullscreen')
+        document.documentElement.classList.add('pseudo-fullscreen-active')
+        isFullscreen.value = true
+      })
       screen?.orientation?.lock?.('landscape').catch(() => {})
+    } else {
+      // No Fullscreen API at all — use pseudo-fullscreen
+      el.classList.add('pseudo-fullscreen')
+      document.documentElement.classList.add('pseudo-fullscreen-active')
+      isFullscreen.value = true
     }
   } else {
     const exitFs = document.exitFullscreen || document.webkitExitFullscreen || document.webkitCancelFullScreen || document.mozCancelFullScreen
@@ -369,26 +380,45 @@ function resetControlsTimer() {
 // ── ⑩ دورة الحياة ──
 // ─────────────────────────────────────────────────────
 onMounted(() => {
-  // ── Detect iOS (iPhone, iPad, iPod) ──
+  // ── Detect platforms with limited/no Fullscreen API ──
   if (typeof navigator !== 'undefined') {
     const ua = navigator.userAgent || ''
-    isIOS.value = /iPad|iPhone|iPod/.test(ua) ||
+    const isIOSDevice = /iPad|iPhone|iPod/.test(ua) ||
       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) // iPad on iOS 13+
+    // Smart TV detection: Samsung Tizen, LG webOS, HbbTV, Panasonic, Philips, etc.
+    const isSmartTV = /Tizen|SmartTV|SMART-TV|webOS|Web0S|NetCast|NETTV|HbbTV|BRAVIA|Viera|Panasonic|PhilipsTV|GoogleTV|Roku|CrKey|Silk\/.*Fire/.test(ua)
+    isLimitedFullscreen.value = isIOSDevice || isSmartTV
+
+    // Additional runtime check: if Fullscreen API is not available at all
+    if (!document.fullscreenEnabled && !document.webkitFullscreenEnabled && !document.mozFullScreenEnabled) {
+      isLimitedFullscreen.value = true
+    }
   }
 
   launchStream(activeChannel.value.url)
 
   // ── Standard fullscreen change event ──
   document.addEventListener('fullscreenchange', () => {
-    isFullscreen.value = !!(document.fullscreenElement || document.webkitFullscreenElement)
+    const inFs = !!(document.fullscreenElement || document.webkitFullscreenElement)
+    isFullscreen.value = inFs
+    // Clean up pseudo-fullscreen class if exiting via native API
+    if (!inFs) {
+      playerContainer.value?.classList.remove('pseudo-fullscreen')
+      document.documentElement.classList.remove('pseudo-fullscreen-active')
+    }
   })
 
   // ── WebKit fullscreen change (Safari desktop) ──
   document.addEventListener('webkitfullscreenchange', () => {
-    isFullscreen.value = !!(document.webkitFullscreenElement || document.fullscreenElement)
+    const inFs = !!(document.webkitFullscreenElement || document.fullscreenElement)
+    isFullscreen.value = inFs
+    if (!inFs) {
+      playerContainer.value?.classList.remove('pseudo-fullscreen')
+      document.documentElement.classList.remove('pseudo-fullscreen-active')
+    }
   })
 
-  // ── iOS video-level fullscreen events ──
+  // ── Video-level fullscreen events (iOS + some Smart TVs) ──
   nextTick(() => {
     const v = videoRef.value
     if (v) {
@@ -559,11 +589,14 @@ onUnmounted(() => {
             />
 
             <!-- ════ البصمة المائية — برعاية التكامل نت ════ -->
-            <div class="absolute bottom-8 right-4 sm:right-6 z-20 pointer-events-none select-none opacity-90 transition-opacity duration-300 hover:opacity-100">
+            <!-- Logo size & position are dynamic: scales with viewport/player -->
+            <div
+              class="watermark-container absolute z-20 pointer-events-none select-none opacity-90 transition-opacity duration-300 hover:opacity-100"
+            >
               <img
                 src="/images/logo/logoLive.png"
                 alt="برعاية التكامل نت"
-                class="h-24 sm:h-28 md:h-32 w-auto"
+                class="watermark-logo w-auto"
                 style="filter: drop-shadow(0 4px 12px rgba(0,0,0,0.8));"
               />
             </div>
@@ -1031,26 +1064,59 @@ onUnmounted(() => {
 .slide-volume-enter-from,
 .slide-volume-leave-to     { opacity: 0; width: 0; }
 
-/* ── iOS pseudo-fullscreen fallback ── */
-/* iOS Safari doesn't support requestFullscreen() on non-video elements,
-   so we simulate fullscreen with fixed positioning covering the viewport. */
-.ios-pseudo-fullscreen {
+/* ── Dynamic watermark logo — scales with viewport, centered bottom ── */
+.watermark-container {
+  bottom: clamp(1.5rem, 4vh, 3rem);
+  left: 50%;
+  transform: translateX(-50%);
+}
+.watermark-logo {
+  height: clamp(60px, 8vw, 160px);
+}
+
+/* In fullscreen (native or pseudo), use larger sizing */
+:fullscreen .watermark-logo,
+:-webkit-full-screen .watermark-logo {
+  height: clamp(80px, 10vw, 220px);
+}
+:fullscreen .watermark-container,
+:-webkit-full-screen .watermark-container {
+  bottom: clamp(2rem, 5vh, 4rem);
+  left: 50%;
+  transform: translateX(-50%);
+}
+.pseudo-fullscreen .watermark-logo {
+  height: clamp(80px, 10vw, 220px);
+}
+.pseudo-fullscreen .watermark-container {
+  bottom: clamp(2rem, 5vh, 4rem);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* ── Pseudo-fullscreen fallback (iOS + Smart TVs) ── */
+/* For platforms that lack requestFullscreen() on non-video elements,
+   we simulate fullscreen with fixed positioning covering the viewport. */
+.pseudo-fullscreen {
   position: fixed !important;
   top: 0 !important;
   left: 0 !important;
   width: 100vw !important;
   height: 100vh !important;
+  height: 100dvh !important; /* dynamic viewport height — avoids Safari address bar issues */
   z-index: 99999 !important;
   border-radius: 0 !important;
   background: #000 !important;
-  /* Required for smooth transition */
-  transition: none !important;
+  aspect-ratio: auto !important;
 }
-
-/* Ensure the video fills the pseudo-fullscreen container */
-.ios-pseudo-fullscreen video {
+.pseudo-fullscreen video {
   width: 100% !important;
   height: 100% !important;
   object-fit: contain !important;
+}
+
+/* Hide page scrollbar when in pseudo-fullscreen */
+:global(.pseudo-fullscreen-active) {
+  overflow: hidden !important;
 }
 </style>
