@@ -1,6 +1,11 @@
 node_modules
-.nuxt
 .output
-.DS_Store
-*.log
+.nuxt
+.nitro
+.cache
+dist
 .env
+.DS_Store
+*.tar
+*.logore
+*.log
