@@ -49,10 +49,12 @@ export default defineNuxtConfig({
     exposeConfig: false,
   },
 
-  // ── إعدادات وقت التشغيل (للاستخدام في المستقبل) ──
+  // ── إعدادات وقت التشغيل ──
   runtimeConfig: {
+    // Server-only secret — set via NUXT_BANNER_PASSWORD env variable
+    bannerPassword: process.env.NUXT_BANNER_PASSWORD || 'altkamel2026',
     public: {
-      streamBaseUrl: process.env.STREAM_BASE_URL || 'http://172.16.6.102',
+      streamBaseUrl: process.env.STREAM_BASE_URL || 'http://tv.altkamel.ly',
     },
   },
 

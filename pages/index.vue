@@ -601,6 +601,9 @@ onUnmounted(() => {
               />
             </div>
 
+            <!-- ════ شريط الأخبار المتحرك ════ -->
+            <NewsBanner />
+
             <!-- ── تحميل ── -->
             <Transition name="fade-overlay">
               <div
