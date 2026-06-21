@@ -102,8 +102,9 @@ const qualityLevels    = ref([])
 const showQualityMenu  = ref(false)
 const selectedLevel    = ref(-1)
 
-// ── Fullscreen API workaround detection (iOS + Smart TVs) ──
+// ── Smart TV & Fullscreen API workaround detection ──
 const isLimitedFullscreen = ref(false)
+const isHardwareTV        = ref(false)
 
 let hlsInstance  = null
 let controlsTimer = null
@@ -113,16 +114,15 @@ const MAX_RETRIES  = 3
 
 // ─────────────────────────────────────────────────────
 // ── ⑥ عداد المشاهدين الذكي ──
-// بدءاً من 1100، يتذبذب كل 15 ثانية
 // ─────────────────────────────────────────────────────
 const viewerCount   = ref(1100)
 let statsInterval   = null
 
 function tickViewers() {
-  // تذبذب عشوائي بين -25 و +25
   const delta = Math.floor(Math.random() * 51) - 25
   viewerCount.value = Math.max(800, Math.min(1500, viewerCount.value + delta))
 }
+
 // ─────────────────────────────────────────────────────
 // ── ⑦ منطق HLS الأساسي ومحرك التعافي التلقائي ──
 // ─────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ function destroyHls() {
 }
 
 // ─────────────────────────────────────────────────────
-// ── ⑧ تشغيل البث — المحسن لشبكات اللاسلكي (WISP) ──
+// ── ⑧ تشغيل البث — المحسن لشبكات اللاسلكي وشاشات التلفاز ──
 // ─────────────────────────────────────────────────────
 function launchStream(url) {
   if (!url) return
@@ -149,9 +149,15 @@ function launchStream(url) {
     const videoEl = videoRef.value
     if (!videoEl) return
 
-    // ─── Safari / iOS: دعم HLS الأصلي ───
-    if (!Hls.isSupported()) {
-      if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+    const canPlayNative = videoEl.canPlayType('application/vnd.apple.mpegurl');
+
+    // ─── استراتيجية التوجيه (Routing Strategy) ───
+    // إجبار التلفزيونات الذكية (مثل Hisense/VIDAA) وأجهزة iOS على استخدام المشغل الأصلي بدلاً من hls.js
+    const forceNativeDecoder = canPlayNative && (isHardwareTV.value || isLimitedFullscreen.value);
+
+    // ─── الدعم الأصلي (Smart TVs / Safari / iOS) ───
+    if (forceNativeDecoder || !Hls.isSupported()) {
+      if (canPlayNative) {
         videoEl.src = url
         videoEl.load()
         videoEl.addEventListener('loadedmetadata', () => {
@@ -159,7 +165,9 @@ function launchStream(url) {
           isLoading.value = false
           videoEl.play().catch(() => {})
         }, { once: true })
-        videoEl.addEventListener('error', () => handleStreamError(url), { once: true })
+        videoEl.addEventListener('error', () => {
+          if (typeof handleStreamError === 'function') handleStreamError(url);
+        }, { once: true })
       } else {
         isLoading.value = false
         isError.value   = true
@@ -167,29 +175,20 @@ function launchStream(url) {
       return
     }
 
-    // ─── hls.js (النسخة المحسنة) ───
+    // ─── hls.js (النسخة المحسنة للويب والأندرويد) ───
     hlsInstance = new Hls({
       enableWorker: true,
-      
-      // تعطيل وضع زمن الوصول المنخفض لزيادة استقرار البث عبر اللاسلكي
-      lowLatencyMode: false, 
-      
-      // إعدادات الذاكرة المؤقتة (البفرينغ) لامتصاص تذبذب الشبكة
-      backBufferLength: 30,       // تنظيف الذاكرة القديمة بسرعة لتخفيف الضغط على الرام
-      maxBufferLength: 60,        // تخزين حتى 60 ثانية للأمام إذا كانت الشبكة سريعة
+      lowLatencyMode: false,
+      backBufferLength: 30,
+      maxBufferLength: 60,
       maxMaxBufferLength: 90,
-      
-      // الابتعاد عن حافة البث المباشر لتجنب التقطيع عند تأخر وصول الحزم
-      liveSyncDurationCount: 3,   // البقاء متأخراً 3 أجزاء (Fragments) عن البث الفعلي
+      liveSyncDurationCount: 3,
       liveMaxLatencyDurationCount: 10,
-      
-      // تحمل أخطاء توقيت الصوت والصورة (AAC Timestamps)
-      strict: false,              // عدم إيقاف البث عند وجود أخطاء في الـ Playlist
+      strict: false,
       manifestLoadingMaxRetry: 5,
       fragLoadingMaxRetry: 6,
       levelLoadingMaxRetry: 4,
       fragLoadingTimeOut: 20000,
-      
       xhrSetup(xhr) { xhr.withCredentials = false },
     })
 
@@ -198,7 +197,7 @@ function launchStream(url) {
 
     hlsInstance.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
       retryCount = 0
-      isLoading.value = false 
+      isLoading.value = false
       const lvls = data?.levels ?? []
       if (lvls.length) {
         qualityLevels.value = lvls.map((l, i) => ({
@@ -213,7 +212,7 @@ function launchStream(url) {
         const h = best?.height ?? 0
         currentQuality.value = h >= 1080 ? '1080p' : h >= 720 ? 'HD' : h >= 480 ? '480p' : 'AUTO'
       }
-      videoEl.play().catch(() => { /* المتصفح يمنع التشغيل التلقائي */ })
+      videoEl.play().catch(() => {})
     })
 
     hlsInstance.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
@@ -226,24 +225,18 @@ function launchStream(url) {
       }
     })
 
-    // ─── محرك التعافي التلقائي للأخطاء ───
     hlsInstance.on(Hls.Events.ERROR, (_e, data) => {
       if (data.fatal) {
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
-            // إذا انقطعت الشبكة لثانية، يحاول تحميل الجزء مرة أخرى بصمت
-            console.warn("Network error encountered, trying to recover...");
             hlsInstance.startLoad();
             break;
           case Hls.ErrorTypes.MEDIA_ERROR:
-            // يعالج أخطاء توقيت الصوت (AAC) دون أن يلاحظ المشاهد
-            console.warn("Media error encountered, attempting to heal...");
             hlsInstance.recoverMediaError();
             break;
           default:
-            // أخطاء حرجة جداً، إعادة تشغيل المحرك بالكامل
             destroyHls();
-            handleStreamError(url);
+            if (typeof handleStreamError === 'function') handleStreamError(url);
             break;
         }
       }
@@ -297,16 +290,12 @@ function toggleFullscreen() {
   const videoEl = videoRef.value
   if (!el) return
 
-  // ── Limited Fullscreen API (iOS Safari, Smart TVs) ──
-  // These platforms don't support requestFullscreen() on containers.
-  // Strategy: try webkitEnterFullscreen on <video>, else CSS pseudo-fullscreen.
   if (isLimitedFullscreen.value) {
     if (videoEl && typeof videoEl.webkitEnterFullscreen === 'function' && !isFullscreen.value) {
       videoEl.webkitEnterFullscreen()
     } else if (videoEl && typeof videoEl.webkitExitFullscreen === 'function' && isFullscreen.value) {
       videoEl.webkitExitFullscreen()
     } else {
-      // CSS pseudo-fullscreen fallback
       if (!isFullscreen.value) {
         el.classList.add('pseudo-fullscreen')
         document.documentElement.classList.add('pseudo-fullscreen-active')
@@ -322,21 +311,17 @@ function toggleFullscreen() {
     return
   }
 
-  // ── Standard Fullscreen API (Chrome, Firefox, Desktop Safari) ──
-  // Try the standard API first, fall back to CSS pseudo-fullscreen if it fails.
   const fsElement = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement
   if (!fsElement) {
     const requestFs = el.requestFullscreen || el.webkitRequestFullscreen || el.webkitRequestFullScreen || el.mozRequestFullScreen
     if (requestFs) {
       requestFs.call(el).catch(() => {
-        // Fullscreen API rejected — fall back to pseudo-fullscreen
         el.classList.add('pseudo-fullscreen')
         document.documentElement.classList.add('pseudo-fullscreen-active')
         isFullscreen.value = true
       })
       screen?.orientation?.lock?.('landscape').catch(() => {})
     } else {
-      // No Fullscreen API at all — use pseudo-fullscreen
       el.classList.add('pseudo-fullscreen')
       document.documentElement.classList.add('pseudo-fullscreen-active')
       isFullscreen.value = true
@@ -380,16 +365,18 @@ function resetControlsTimer() {
 // ── ⑩ دورة الحياة ──
 // ─────────────────────────────────────────────────────
 onMounted(() => {
-  // ── Detect platforms with limited/no Fullscreen API ──
+  // ── Detect platforms with limited/no Fullscreen API and Hardware TVs ──
   if (typeof navigator !== 'undefined') {
     const ua = navigator.userAgent || ''
     const isIOSDevice = /iPad|iPhone|iPod/.test(ua) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) // iPad on iOS 13+
-    // Smart TV detection: Samsung Tizen, LG webOS, HbbTV, Panasonic, Philips, etc.
-    const isSmartTV = /Tizen|SmartTV|SMART-TV|webOS|Web0S|NetCast|NETTV|HbbTV|BRAVIA|Viera|Panasonic|PhilipsTV|GoogleTV|Roku|CrKey|Silk\/.*Fire/.test(ua)
-    isLimitedFullscreen.value = isIOSDevice || isSmartTV
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 
-    // Additional runtime check: if Fullscreen API is not available at all
+    // تم إضافة Hisense و VIDAA للتعرف على الشاشات التي تعاني من تقطيع hls.js
+    const tvRegex = /VIDAA|Hisense|Tizen|SmartTV|SMART-TV|webOS|Web0S|NetCast|NETTV|HbbTV|BRAVIA|Viera|Panasonic|PhilipsTV|GoogleTV|Roku|CrKey|Silk\/.*Fire/i;
+
+    isHardwareTV.value = tvRegex.test(ua);
+    isLimitedFullscreen.value = isIOSDevice || isHardwareTV.value
+
     if (!document.fullscreenEnabled && !document.webkitFullscreenEnabled && !document.mozFullScreenEnabled) {
       isLimitedFullscreen.value = true
     }
@@ -397,18 +384,15 @@ onMounted(() => {
 
   launchStream(activeChannel.value.url)
 
-  // ── Standard fullscreen change event ──
   document.addEventListener('fullscreenchange', () => {
     const inFs = !!(document.fullscreenElement || document.webkitFullscreenElement)
     isFullscreen.value = inFs
-    // Clean up pseudo-fullscreen class if exiting via native API
     if (!inFs) {
       playerContainer.value?.classList.remove('pseudo-fullscreen')
       document.documentElement.classList.remove('pseudo-fullscreen-active')
     }
   })
 
-  // ── WebKit fullscreen change (Safari desktop) ──
   document.addEventListener('webkitfullscreenchange', () => {
     const inFs = !!(document.webkitFullscreenElement || document.fullscreenElement)
     isFullscreen.value = inFs
@@ -418,7 +402,6 @@ onMounted(() => {
     }
   })
 
-  // ── Video-level fullscreen events (iOS + some Smart TVs) ──
   nextTick(() => {
     const v = videoRef.value
     if (v) {
@@ -432,7 +415,6 @@ onMounted(() => {
   })
   statsInterval = setInterval(tickViewers, 15_000)
 
-  // مراقبة حالة التشغيل من أحداث عنصر الفيديو مباشرةً
   nextTick(() => {
     const v = videoRef.value
     if (!v) return
